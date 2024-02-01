@@ -1,8 +1,14 @@
 matplotlib
-torch
+torch==2.2.0
 torchvision
 pandas
 numpy
 loguru
 pickle5
 cvxpy
+tqdm
+scikit-learn
+pyyaml
+Cython
+tensorflow==2.11.0
+waymo-open-dataset-tf-2-11-0
