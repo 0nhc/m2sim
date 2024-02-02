@@ -31,7 +31,7 @@ from IPython import embed
 def init_config(args):
     '''from utils.py'''
     if args.config is not None:
-        fs = open(os.path.join('..', 'configs', args.config))
+        fs = open(os.path.join('.', 'configs', args.config))
         config = yaml.load(fs, yaml.FullLoader)
         for key in config:
             setattr(args, key, config[key])
@@ -57,7 +57,6 @@ def init_m2i_args():
     args.do_eval = True
     args.do_test = False
 
-    args.visualize = False
     ################
     # args.data_dir = ''
     # args.data_txt = ''
@@ -72,7 +71,7 @@ def init_m2i_args():
     # args.num_train_epochs = 0
     # args.seed = 0
     ################
-    args.log_dir = '/DATA2/lpf/baidu/additional_files_for_m2i/test4infer'
+    args.log_dir = 'log'
     args.no_cuda = False
     args.hidden_size = 128
     args.hidden_dropout_prob = 0.1
@@ -94,6 +93,7 @@ def init_m2i_args():
     args.train_params = []
     args.not_use_api = False
     args.core_num = 16
+    args.visualize = False
     args.train_extra = False
     args.use_centerline = False
     args.autoregression = None
@@ -235,7 +235,7 @@ def choose_reactor(input_data, args):
         pastcurrent_valid_agent = pastcurrent_valid.sum(1)>0
 
         if not pastcurrent_valid_agent[0] == True and pastcurrent_valid_agent[1] == True:
-            embed(header='not pastcurrent_valid_agent[0] == True and pastcurrent_valid_agent[1] == True')
+            # embed(header='not pastcurrent_valid_agent[0] == True and pastcurrent_valid_agent[1] == True')
             raise NotImplementedError()
         assert pastcurrent_valid_agent[0] == True and pastcurrent_valid_agent[1] == True
 
@@ -257,7 +257,7 @@ def choose_reactor(input_data, args):
 
     return split_data_list, influencer_idx
 
-def prepare_data(args, input_data, cycle_round):
+def prepare_data(args, input_data, round):
     '''生成m2i所需格式'''
     inputs, decoded_example = _parse(input_data)
     sample_is_valid = inputs['sample_is_valid']
@@ -270,7 +270,7 @@ def prepare_data(args, input_data, cycle_round):
         # Make sure both agents are of the same type if it is specified.
         # if type_is_ok(tracks_type[select], args) and type_is_ok(tracks_type[1 - select], args):
         if True:
-            t = get_instance(args, inputs, decoded_example, str(decoded_example['influencer_reactor_idx'][0])+'_'+str(decoded_example['influencer_reactor_idx'][1])+'_'+str(cycle_round),
+            t = get_instance(args, inputs, decoded_example, str(decoded_example['influencer_reactor_idx'][0])+'_'+str(decoded_example['influencer_reactor_idx'][1])+'_'+str(round),
                                 select=select)
             # change to a soft check when eval
             if t is not None:
@@ -349,7 +349,7 @@ def get_traj_nearest_to_GT(gt_trajectory_x, gt_trajectory_y, pred_trajectory, k,
     else:
         raise NotImplementedError
 
-    # print(min_idx)
+    #print(min_idx)
     # embed(header='get_nearest_gt')
     return pred_trajectory[min_idx,:,0], pred_trajectory[min_idx,:,1]
 
@@ -387,9 +387,9 @@ def get_inter_relation(gt_trajectory_x, gt_trajectory_y, influencer_gt_x, influe
     else:
         return False
 
-cycle_round = 0
-def run_m2i_inference(args, m2i_model, input_data, pred_traj_type='nearestGT', filter_noninter=False):
-    global cycle_round
+round = 0
+def run_m2i_inference(args, m2i_model, input_data, pred_traj_type='highestScore', filter_noninter=False):
+    global round
 
     device = torch.device(
         "cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -426,7 +426,7 @@ def run_m2i_inference(args, m2i_model, input_data, pred_traj_type='nearestGT', f
     all_traj = np.ones([input_data['state/future/x'].shape[0],6,80,2]) * -1.
 
     for k,v in split_data_list.items():
-        modified_data_item = prepare_data(args, v, cycle_round)
+        modified_data_item = prepare_data(args, v, round)
 
         if eval_prediction:
             metric_params = get_metric_params(modified_data_item, args)
@@ -458,7 +458,7 @@ def run_m2i_inference(args, m2i_model, input_data, pred_traj_type='nearestGT', f
             predicted_traj_x_highestScore[k] = copy.deepcopy(pred_trajectory[0,0,:,0])  # batch, highest score, time, x
             predicted_traj_y_highestScore[k] = copy.deepcopy(pred_trajectory[0,0,:,1])
         elif pred_traj_type == 'nearestGT':
-            print('========k:', k)
+            #print('========k:', k)
             predicted_traj_x_nearestGT[k], predicted_traj_y_nearestGT[k] = get_traj_nearest_to_GT(v['dummy/future/gt/x'][1], v['dummy/future/gt/y'][1], pred_trajectory[0,:,:,:], k, v)
         elif pred_traj_type == 'nearestLane':
             predicted_traj_x_nearestLane[k], predicted_traj_y_nearestLane[k] = get_traj_nearest_to_lane(v['roadgraph_samples/xyz'], pred_trajectory[0,:,:,:])
@@ -471,13 +471,11 @@ def run_m2i_inference(args, m2i_model, input_data, pred_traj_type='nearestGT', f
         print('all metric_values', len(motion_metrics.get_all()[0]))
         print(utils.metric_values_to_string(motion_metrics.result(), metric_names))
 
-    cycle_round += 1
-    # return all_traj
+    round += 1
     if pred_traj_type == 'highestScore':
         return predicted_traj_x_highestScore, predicted_traj_y_highestScore
     elif pred_traj_type == 'nearestGT':
-        # return predicted_traj_x_nearestGT, predicted_traj_y_nearestGT
-        return np.concatenate([predicted_traj_x_nearestGT[...,np.newaxis], predicted_traj_y_nearestGT[...,np.newaxis]], axis=-1)
+        return predicted_traj_x_nearestGT, predicted_traj_y_nearestGT
     elif pred_traj_type == 'nearestLane':
         return predicted_traj_x_nearestLane, predicted_traj_y_nearestLane
     else:
@@ -485,11 +483,11 @@ def run_m2i_inference(args, m2i_model, input_data, pred_traj_type='nearestGT', f
 
 def main():
     '''test'''
-    ckpt_path = '../model.21.bin'
+    ckpt_path = '/DATA2/lpf/baidu/additional_files_for_m2i/test0922_0_vv/model_save/model.12.bin'
     reactor_type = 'vehicle'
     args, m2i_model = init_m2i(ckpt_path, reactor_type)
 
-    input_data = np.load('./test.npy', allow_pickle=True).item()
+    input_data = np.load('/DATA2/lpf/baidu/M2I-main/trajactory/test.npy', allow_pickle=True).item()
     input_data.pop('relation')
 
     redicted_traj_x, predicted_traj_y = run_m2i_inference(args, m2i_model, input_data, pred_traj_type='nearestGT')
